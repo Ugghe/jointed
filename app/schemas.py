@@ -1,4 +1,6 @@
-from pydantic import BaseModel, Field
+from __future__ import annotations
+
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class PuzzleGroup(BaseModel):
@@ -20,3 +22,37 @@ class PuzzleResponse(BaseModel):
 
 class ErrorResponse(BaseModel):
     detail: str
+
+
+class BespokeCategoryIn(BaseModel):
+    label: str
+    words: list[str]
+
+
+class BespokePuzzleCreate(BaseModel):
+    """Exactly four categories, each with four words."""
+
+    categories: list[BespokeCategoryIn]
+
+    @field_validator("categories")
+    @classmethod
+    def four_categories(cls, v: list[BespokeCategoryIn]) -> list[BespokeCategoryIn]:
+        if len(v) != 4:
+            raise ValueError("Must provide exactly 4 categories")
+        return v
+
+    @model_validator(mode="after")
+    def words_nonempty(self) -> BespokePuzzleCreate:
+        for i, c in enumerate(self.categories):
+            if not c.label.strip():
+                raise ValueError(f"Category {i + 1}: label must be non-empty")
+            if len(c.words) != 4:
+                raise ValueError(f"Category {i + 1} must have exactly 4 words")
+            for j, w in enumerate(c.words):
+                if not isinstance(w, str) or not w.strip():
+                    raise ValueError(f"Category {i + 1}, word {j + 1}: must be non-empty")
+        return self
+
+
+class CreateBespokePuzzleResponse(BaseModel):
+    puzzle_id: str

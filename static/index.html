@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Jointed — add puzzle</title>
+  <style>
+    :root {
+      --bg: #0f1419;
+      --panel: #1a2332;
+      --text: #e7ecf3;
+      --muted: #8b9bb0;
+      --accent: #3d8bfd;
+      --border: #2c3a50;
+      --error: #f87171;
+      --ok: #4ade80;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      margin: 0;
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+    .wrap { max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
+    h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.25rem; }
+    p.lead { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
+    .grid {
+      display: grid;
+      gap: 1rem;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+    }
+    section.cat {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    section.cat h2 {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin: 0 0 0.5rem;
+    }
+    label { display: block; font-size: 0.85rem; margin-bottom: 0.35rem; }
+    input[type="text"] {
+      width: 100%;
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0d1218;
+      color: var(--text);
+      margin-bottom: 0.5rem;
+      font-size: 0.95rem;
+    }
+    input[type="text"]:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .actions { margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+    button {
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      padding: 0.55rem 1.1rem;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .msg { font-size: 0.9rem; }
+    .msg.error { color: var(--error); }
+    .msg.ok { color: var(--ok); }
+    pre.out {
+      margin: 1rem 0 0;
+      padding: 1rem;
+      background: #0d1218;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: auto;
+      font-size: 0.8rem;
+      max-height: 22rem;
+    }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Add bespoke puzzle</h1>
+    <p class="lead">Four categories × four words. Saves words and tags to the database and returns a puzzle id you can fetch later.</p>
+
+    <form id="form" novalidate>
+      <div class="grid" id="categories"></div>
+      <div class="actions">
+        <button type="submit" id="btn">Save puzzle</button>
+        <span class="msg" id="status" aria-live="polite"></span>
+      </div>
+    </form>
+    <pre class="out" id="jsonOut" hidden></pre>
+  </div>
+
+  <script>
+    const root = document.getElementById("categories");
+    for (let i = 0; i < 4; i++) {
+      const sec = document.createElement("section");
+      sec.className = "cat";
+      sec.innerHTML = `
+        <h2>Category ${i + 1}</h2>
+        <label for="label${i}">Category name</label>
+        <input type="text" id="label${i}" name="label${i}" required autocomplete="off" placeholder="e.g. Fish" />
+        <label>Words (four)</label>
+        ${[0,1,2,3].map(j => `
+          <input type="text" id="w${i}_${j}" data-ci="${i}" data-wi="${j}" required autocomplete="off" placeholder="Word ${j + 1}" />
+        `).join("")}
+      `;
+      root.appendChild(sec);
+    }
+
+    const statusEl = document.getElementById("status");
+    const jsonOut = document.getElementById("jsonOut");
+    const btn = document.getElementById("btn");
+
+    function apiBase() {
+      return "";
+    }
+
+    document.getElementById("form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      statusEl.textContent = "";
+      statusEl.className = "msg";
+      jsonOut.hidden = true;
+      const categories = [];
+      for (let i = 0; i < 4; i++) {
+        const label = document.getElementById(`label${i}`).value;
+        const words = [0,1,2,3].map(j => document.getElementById(`w${i}_${j}`).value);
+        categories.push({ label, words });
+      }
+      btn.disabled = true;
+      try {
+        const res = await fetch(apiBase() + "/v1/puzzles", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ categories }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          statusEl.className = "msg error";
+          statusEl.textContent = data.detail || res.statusText || "Request failed";
+          return;
+        }
+        statusEl.className = "msg ok";
+        statusEl.textContent = "Saved. Puzzle id: " + data.puzzle_id;
+        const fetchUrl = apiBase() + "/v1/puzzles/" + data.puzzle_id;
+        jsonOut.textContent = JSON.stringify(data, null, 2);
+        jsonOut.hidden = false;
+        const full = window.location.origin + fetchUrl;
+        statusEl.innerHTML = 'Saved. Fetch: <a href="' + fetchUrl + '">' + full + "</a>";
+      } catch (err) {
+        statusEl.className = "msg error";
+        statusEl.textContent = String(err);
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
