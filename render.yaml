@@ -1,0 +1,30 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+#
+# Deploy:
+# 1. Push this repo to GitHub/GitLab/Bitbucket.
+# 2. Render Dashboard → New → Blueprint → pick the repo → apply (creates web service + free Postgres).
+# 3. Open the web service URL + /v1/puzzle (or /docs). First build runs migrations + seed.
+#
+# Free web services sleep after ~15 min idle; first request can be slow. Free Postgres has limits (see Render docs).
+
+services:
+  - type: web
+    name: jointed-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -e . && alembic upgrade head && python scripts/seed.py
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.6"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: jointed-db
+          property: connectionString
+
+databases:
+  - name: jointed-db
+    plan: free
+    databaseName: jointed
+    user: jointed
