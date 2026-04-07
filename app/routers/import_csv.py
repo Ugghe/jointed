@@ -26,7 +26,9 @@ async def import_words_csv(
     **Format (header required):** long/tidy rows — one row per word–tag pair.
 
     - Required columns: `word` and `tag` (aliases: `text`/`lemma` for word; `category`/`label` for tag).
-    - Optional: `tag_kind` (aliases `kind`, `type`) — used when creating a new tag.
+    - Optional: `tag_kind` (aliases `kind`, `type`) — stored in category metadata when creating a category.
+    - Optional: `difficulty`, `abstraction_level`, `connection_type`, `notes`.
+    - Optional: `display_label` (aliases `category_display`, `puzzle_display`) — stored on the `word_category` edge metadata.
 
     Example:
 

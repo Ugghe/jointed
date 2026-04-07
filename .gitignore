@@ -5,3 +5,6 @@ __pycache__/
 .mypy_cache/
 data/*.db
 *.egg-info/
+
+# Local content generation — not for repo
+LocalDocs/

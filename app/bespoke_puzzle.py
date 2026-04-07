@@ -7,8 +7,8 @@ from typing import NamedTuple
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.lexicon import get_or_create_tag, get_or_create_word, link_word_tag
-from app.models import Puzzle, PuzzleGroupItem, Tag, Word
+from app.lexicon import get_or_create_category, get_or_create_word, link_word_category, slugify_label
+from app.models import Category, Puzzle, PuzzleCategory, PuzzleWord, Word
 from app.puzzle_generator import _Group
 from app.schemas import PuzzleGroup, PuzzleResponse
 
@@ -26,95 +26,129 @@ def save_bespoke_puzzle(session: Session, categories: list[CategoryInput]) -> st
     if len(categories) != 4:
         raise BespokePuzzleError("Need exactly 4 categories")
     seen_norm: set[str] = set()
-    normalized_rows: list[tuple[int, int, Tag, Word]] = []
+    resolved: list[tuple[Category, str, list[Word]]] = []
 
     for gi, cat in enumerate(categories):
         if len(cat.words) != 4:
             raise BespokePuzzleError(f"Category {gi + 1} must have exactly 4 words")
-        tag, _ = get_or_create_tag(session, cat.label)
-        for pi, wtext in enumerate(cat.words):
+        display = cat.label.strip()
+        category, _ = get_or_create_category(session, cat.label)
+        wlist: list[Word] = []
+        for wtext in cat.words:
             word, _ = get_or_create_word(session, wtext)
-            key = word.text.lower()
+            key = word.word
             if key in seen_norm:
-                raise BespokePuzzleError(f'Duplicate word across puzzle: "{word.text}"')
+                raise BespokePuzzleError(f'Duplicate word across puzzle: "{word.word}"')
             seen_norm.add(key)
-            link_word_tag(session, word, tag)
-            normalized_rows.append((gi, pi, tag, word))
+            link_word_category(session, word, category)
+            wlist.append(word)
+        resolved.append((category, display, wlist))
 
-    puzzle_id = str(uuid.uuid4())
-    puzzle = Puzzle(id=puzzle_id)
-    session.add(puzzle)
+    puzzle_id = uuid.uuid4()
+    session.add(Puzzle(puzzle_id=puzzle_id, status="draft"))
     session.flush()
 
-    for gi, pi, tag, w in normalized_rows:
+    for gi, (category, display, _wlist) in enumerate(resolved):
         session.add(
-            PuzzleGroupItem(
+            PuzzleCategory(
                 puzzle_id=puzzle_id,
-                group_index=gi,
-                position_in_group=pi,
-                tag_id=tag.id,
-                word_id=w.id,
+                category_id=category.category_id,
+                display_label=display,
+                sort_order=gi + 1,
             )
         )
+    session.flush()
 
-    return puzzle_id
+    for category, _display, wlist in resolved:
+        for word in wlist:
+            session.add(
+                PuzzleWord(
+                    puzzle_id=puzzle_id,
+                    word_id=word.word_id,
+                    category_id=category.category_id,
+                )
+            )
+
+    return str(puzzle_id)
+
+
+def _category_kind(category: Category) -> str:
+    if category.metadata_ and isinstance(category.metadata_, dict):
+        k = category.metadata_.get("kind")
+        if isinstance(k, str) and k:
+            return k
+    return "semantic"
 
 
 def load_bespoke_puzzle_response(session: Session, puzzle_id: str) -> PuzzleResponse | None:
+    try:
+        pid = uuid.UUID(puzzle_id)
+    except ValueError:
+        return None
+
     stmt = (
         select(Puzzle)
-        .where(Puzzle.id == puzzle_id)
-        .options(selectinload(Puzzle.group_items))
+        .where(Puzzle.puzzle_id == pid)
+        .options(
+            selectinload(Puzzle.puzzle_categories).selectinload(PuzzleCategory.category),
+        )
     )
     puzzle = session.scalar(stmt)
     if puzzle is None:
         return None
 
-    items = sorted(
-        puzzle.group_items,
-        key=lambda r: (r.group_index, r.position_in_group),
-    )
-    if len(items) != 16:
+    pcs = sorted(puzzle.puzzle_categories, key=lambda pc: pc.sort_order or 0)
+    if len(pcs) != 4:
+        return None
+
+    pw_rows = list(session.scalars(select(PuzzleWord).where(PuzzleWord.puzzle_id == pid)).all())
+    if len(pw_rows) != 16:
         return None
 
     groups: list[_Group] = []
-    for gi in range(4):
-        rows = [r for r in items if r.group_index == gi]
-        if len(rows) != 4:
+    for pc in pcs:
+        cat = pc.category
+        if cat is None:
             return None
-        rows.sort(key=lambda r: r.position_in_group)
-        tag = session.get(Tag, rows[0].tag_id)
-        if tag is None or any(r.tag_id != tag.id for r in rows):
+        wrows = [r for r in pw_rows if r.category_id == cat.category_id]
+        if len(wrows) != 4:
             return None
         words: list[Word] = []
-        for r in rows:
+        for r in sorted(wrows, key=lambda x: x.word_id):
             w = session.get(Word, r.word_id)
             if w is None:
                 return None
             words.append(w)
-        groups.append(_Group(tag=tag, words=words))
+        groups.append(_Group(category=cat, words=words))
 
     flat: list[Word] = []
     for g in groups:
         flat.extend(g.words)
     random.shuffle(flat)
 
-    solution = [
-        PuzzleGroup(
-            tag_id=g.tag.id,
-            slug=g.tag.slug,
-            label=g.tag.label,
-            kind=g.tag.kind,
-            word_ids=[w.id for w in g.words],
-            words=[w.text for w in g.words],
+    solution = []
+    for g in groups:
+        disp = None
+        for pc in pcs:
+            if pc.category_id == g.category.category_id:
+                disp = pc.display_label
+                break
+        label_out = disp if disp else g.category.label
+        solution.append(
+            PuzzleGroup(
+                tag_id=g.category.category_id,
+                slug=slugify_label(label_out),
+                label=label_out,
+                kind=_category_kind(g.category),
+                word_ids=[w.word_id for w in g.words],
+                words=[w.word for w in g.words],
+            )
         )
-        for g in groups
-    ]
 
     return PuzzleResponse(
-        puzzle_id=puzzle.id,
+        puzzle_id=str(puzzle.puzzle_id),
         difficulty=0,
-        words=[w.text for w in flat],
-        word_ids=[w.id for w in flat],
+        words=[w.word for w in flat],
+        word_ids=[w.word_id for w in flat],
         solution=solution,
     )

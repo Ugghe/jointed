@@ -7,6 +7,7 @@ from app.auth import require_admin_token
 from app.bespoke_puzzle import BespokePuzzleError, load_bespoke_puzzle_response, save_bespoke_puzzle
 from app.bespoke_puzzle import CategoryInput as SaveCategoryInput
 from app.database import get_db
+from app.lexicon import slugify_label
 from app.puzzle_generator import PuzzleGenerationError, generate_disjoint_puzzle
 from app.schemas import (
     BespokePuzzleCreate,
@@ -34,12 +35,16 @@ def get_puzzle(difficulty: int = 0, db: Session = Depends(get_db)) -> PuzzleResp
 
     solution = [
         PuzzleGroup(
-            tag_id=g.tag.id,
-            slug=g.tag.slug,
-            label=g.tag.label,
-            kind=g.tag.kind,
-            word_ids=[w.id for w in g.words],
-            words=[w.text for w in g.words],
+            tag_id=g.category.category_id,
+            slug=slugify_label(g.category.label),
+            label=g.category.label,
+            kind=(
+                g.category.metadata_.get("kind", "semantic")
+                if g.category.metadata_ and isinstance(g.category.metadata_, dict)
+                else "semantic"
+            ),
+            word_ids=[w.word_id for w in g.words],
+            words=[w.word for w in g.words],
         )
         for g in groups
     ]

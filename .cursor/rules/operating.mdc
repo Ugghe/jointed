@@ -1,0 +1,8 @@
+---
+description: Human–assistant operating agreement for this repo (execute vs ask).
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+Follow **`AGENTS.md`** at the repository root for defaults: run low-risk work in the environment and report; ask yes/no before higher-risk steps; do not substitute long “you should run…” lists when execution is appropriate.
