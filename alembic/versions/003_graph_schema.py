@@ -146,9 +146,16 @@ def upgrade() -> None:
                 "CREATE INDEX idx_words_fts ON words USING GIN (to_tsvector('english', word))"
             )
         )
-        op.execute(sa.text("CREATE INDEX idx_words_metadata ON words USING GIN (metadata)"))
+        # JSON columns need an explicit jsonb cast for GIN (no default opclass on type json).
         op.execute(
-            sa.text("CREATE INDEX idx_categories_metadata ON categories USING GIN (metadata)")
+            sa.text(
+                "CREATE INDEX idx_words_metadata ON words USING GIN ((metadata::jsonb))"
+            )
+        )
+        op.execute(
+            sa.text(
+                "CREATE INDEX idx_categories_metadata ON categories USING GIN ((metadata::jsonb))"
+            )
         )
 
 
