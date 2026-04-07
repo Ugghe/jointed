@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./data/jointed.db"
     puzzle_max_attempts: int = 5000
     min_words_per_tag: int = 4
+    #: Shared secret for POST /v1/puzzles (and the editor form). Empty = writes disabled.
+    admin_token: str | None = None
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> Self:

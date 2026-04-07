@@ -56,3 +56,13 @@ class BespokePuzzleCreate(BaseModel):
 
 class CreateBespokePuzzleResponse(BaseModel):
     puzzle_id: str
+
+
+class ImportWordsCsvResponse(BaseModel):
+    rows_read: int
+    rows_skipped_empty: int
+    unique_words_created: int
+    unique_tags_created: int
+    links_added: int
+    links_already_present: int
+    row_errors: list[str]

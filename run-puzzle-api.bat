@@ -31,9 +31,11 @@ echo Applying migrations and seeding database...
 if errorlevel 1 exit /b 1
 
 set "PORT=8000"
-set "URL=http://127.0.0.1:%PORT%/v1/puzzle"
+REM Puzzle editor needs the same token as the server; override before running for production-like testing.
+if not defined JOINTED_ADMIN_TOKEN set "JOINTED_ADMIN_TOKEN=local-dev-change-me"
+set "URL=http://127.0.0.1:%PORT%/"
 
-echo Starting API on %URL% ...
+echo Starting API. Editor: %URL% Default token is local-dev-change-me unless you set JOINTED_ADMIN_TOKEN.
 REM /D sets the new window's working directory so `app` imports resolve.
 start "Jointed API (uvicorn)" /D "%ROOT%" cmd /k "%VPY%" -m uvicorn app.main:app --host 127.0.0.1 --port %PORT%
 

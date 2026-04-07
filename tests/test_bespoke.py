@@ -1,8 +1,12 @@
+import os
+
 from fastapi.testclient import TestClient
 
 from app.main import app
 
 client = TestClient(app)
+
+_AUTH = {"Authorization": f"Bearer {os.environ.get('JOINTED_ADMIN_TOKEN', 'test-admin-token')}"}
 
 _SAMPLE = {
     "categories": [
@@ -15,7 +19,7 @@ _SAMPLE = {
 
 
 def test_create_and_fetch_bespoke_puzzle() -> None:
-    r = client.post("/v1/puzzles", json=_SAMPLE)
+    r = client.post("/v1/puzzles", json=_SAMPLE, headers=_AUTH)
     assert r.status_code == 200, r.text
     pid = r.json()["puzzle_id"]
     assert len(pid) == 36
@@ -37,5 +41,10 @@ def test_bespoke_duplicate_word_400() -> None:
             {"label": "D", "words": ["h", "i", "j", "k"]},
         ]
     }
-    r = client.post("/v1/puzzles", json=bad)
+    r = client.post("/v1/puzzles", json=bad, headers=_AUTH)
     assert r.status_code == 400
+
+
+def test_post_puzzles_requires_bearer() -> None:
+    r = client.post("/v1/puzzles", json=_SAMPLE)
+    assert r.status_code == 401

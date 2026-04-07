@@ -3,6 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin_token
 from app.bespoke_puzzle import BespokePuzzleError, load_bespoke_puzzle_response, save_bespoke_puzzle
 from app.bespoke_puzzle import CategoryInput as SaveCategoryInput
 from app.database import get_db
@@ -51,7 +52,11 @@ def get_puzzle(difficulty: int = 0, db: Session = Depends(get_db)) -> PuzzleResp
     )
 
 
-@router.post("/puzzles", response_model=CreateBespokePuzzleResponse)
+@router.post(
+    "/puzzles",
+    response_model=CreateBespokePuzzleResponse,
+    dependencies=[Depends(require_admin_token)],
+)
 def create_bespoke_puzzle(
     body: BespokePuzzleCreate,
     db: Session = Depends(get_db),

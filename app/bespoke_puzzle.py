@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 import random
-import re
 import uuid
 from typing import NamedTuple
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.lexicon import get_or_create_tag, get_or_create_word, link_word_tag
 from app.models import Puzzle, PuzzleGroupItem, Tag, Word
 from app.puzzle_generator import _Group
 from app.schemas import PuzzleGroup, PuzzleResponse
@@ -15,51 +15,6 @@ from app.schemas import PuzzleGroup, PuzzleResponse
 
 class BespokePuzzleError(ValueError):
     pass
-
-
-def slugify_label(label: str) -> str:
-    s = label.strip().lower()
-    s = re.sub(r"[^a-z0-9]+", "_", s)
-    s = re.sub(r"_+", "_", s).strip("_")
-    if not s:
-        s = "category"
-    return s[:128]
-
-
-def get_or_create_tag(session: Session, label: str) -> Tag:
-    base = slugify_label(label)
-    slug = base
-    n = 2
-    while True:
-        existing = session.scalar(select(Tag).where(Tag.slug == slug))
-        if existing is None:
-            t = Tag(slug=slug, label=label.strip(), kind="semantic")
-            session.add(t)
-            session.flush()
-            return t
-        if existing.label.strip() == label.strip():
-            return existing
-        slug = f"{base}_{n}"
-        n += 1
-        if len(slug) > 128:
-            slug = f"{base[:100]}_{n}"
-
-
-def get_or_create_word(session: Session, text: str) -> Word:
-    cleaned = text.strip()
-    if not cleaned:
-        raise BespokePuzzleError("Empty word")
-    w = session.scalar(select(Word).where(Word.text == cleaned))
-    if w is None:
-        w = Word(text=cleaned)
-        session.add(w)
-        session.flush()
-    return w
-
-
-def link_word_tag(session: Session, word: Word, tag: Tag) -> None:
-    if tag not in word.tags:
-        word.tags.append(tag)
 
 
 class CategoryInput(NamedTuple):
@@ -76,15 +31,15 @@ def save_bespoke_puzzle(session: Session, categories: list[CategoryInput]) -> st
     for gi, cat in enumerate(categories):
         if len(cat.words) != 4:
             raise BespokePuzzleError(f"Category {gi + 1} must have exactly 4 words")
-        tag = get_or_create_tag(session, cat.label)
+        tag, _ = get_or_create_tag(session, cat.label)
         for pi, wtext in enumerate(cat.words):
-            w = get_or_create_word(session, wtext)
-            key = w.text.lower()
+            word, _ = get_or_create_word(session, wtext)
+            key = word.text.lower()
             if key in seen_norm:
-                raise BespokePuzzleError(f'Duplicate word across puzzle: "{w.text}"')
+                raise BespokePuzzleError(f'Duplicate word across puzzle: "{word.text}"')
             seen_norm.add(key)
-            link_word_tag(session, w, tag)
-            normalized_rows.append((gi, pi, tag, w))
+            link_word_tag(session, word, tag)
+            normalized_rows.append((gi, pi, tag, word))
 
     puzzle_id = str(uuid.uuid4())
     puzzle = Puzzle(id=puzzle_id)

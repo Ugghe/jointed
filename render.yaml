@@ -18,6 +18,9 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: "3.12.6"
+      # Required for POST /v1/puzzles (puzzle editor). Set a long random value in the Render dashboard.
+      - key: JOINTED_ADMIN_TOKEN
+        sync: false
       - key: DATABASE_URL
         fromDatabase:
           name: jointed-db

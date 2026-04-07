@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Jointed — add puzzle</title>
+  <title>Jointed — admin</title>
   <style>
     :root {
       --bg: #0f1419;
@@ -26,7 +26,32 @@
     }
     .wrap { max-width: 52rem; margin: 0 auto; padding: 1.5rem; }
     h1 { font-size: 1.35rem; font-weight: 600; margin: 0 0 0.25rem; }
+    h2.sec {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 1.75rem 0 0.75rem;
+      padding-bottom: 0.35rem;
+      border-bottom: 1px solid var(--border);
+    }
     p.lead { color: var(--muted); margin: 0 0 1.5rem; font-size: 0.95rem; }
+    .auth {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      margin-bottom: 1.25rem;
+    }
+    .auth label { font-weight: 600; color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    input[type="password"] {
+      width: 100%;
+      padding: 0.45rem 0.55rem;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: #0d1218;
+      color: var(--text);
+      font-size: 0.95rem;
+      font-family: inherit;
+    }
     .grid {
       display: grid;
       gap: 1rem;
@@ -38,7 +63,7 @@
       border-radius: 10px;
       padding: 1rem;
     }
-    section.cat h2 {
+    section.cat h3 {
       font-size: 0.75rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
@@ -60,6 +85,19 @@
       outline: 2px solid var(--accent);
       outline-offset: 1px;
     }
+    input[type="file"] {
+      width: 100%;
+      font-size: 0.9rem;
+      margin-bottom: 0.75rem;
+      color: var(--muted);
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+    }
+    .panel p.hint { color: var(--muted); font-size: 0.85rem; margin: 0 0 0.75rem; }
     .actions { margin-top: 1.25rem; display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
     button {
       background: var(--accent);
@@ -71,6 +109,7 @@
       font-weight: 600;
       cursor: pointer;
     }
+    button.secondary { background: #2c3a50; }
     button:hover { filter: brightness(1.08); }
     button:disabled { opacity: 0.5; cursor: not-allowed; }
     .msg { font-size: 0.9rem; }
@@ -87,12 +126,21 @@
       max-height: 22rem;
     }
     a { color: var(--accent); }
+    code { font-size: 0.85em; }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <h1>Add bespoke puzzle</h1>
-    <p class="lead">Four categories × four words. Saves words and tags to the database and returns a puzzle id you can fetch later.</p>
+    <h1>Jointed admin</h1>
+    <p class="lead">Use the admin token from the server (<code>JOINTED_ADMIN_TOKEN</code>). It is stored in session storage for this tab only.</p>
+
+    <div class="auth">
+      <label for="adminToken">Admin token</label>
+      <input type="password" id="adminToken" autocomplete="current-password" placeholder="Paste token before using either tool below" />
+    </div>
+
+    <h2 class="sec">Bespoke puzzle</h2>
+    <p class="lead" style="margin-top:0">Four categories × four words; returns a puzzle id.</p>
 
     <form id="form" novalidate>
       <div class="grid" id="categories"></div>
@@ -102,6 +150,18 @@
       </div>
     </form>
     <pre class="out" id="jsonOut" hidden></pre>
+
+    <h2 class="sec">Import word/tag CSV</h2>
+    <div class="panel">
+      <p class="hint">UTF-8 file with a header row: <code>word,tag</code> (one row per link). Optional: <code>tag_kind</code>. Same merge rules as the API.</p>
+      <label for="csvFile">CSV file</label>
+      <input type="file" id="csvFile" accept=".csv,text/csv" />
+      <div class="actions" style="margin-top:0">
+        <button type="button" class="secondary" id="csvBtn">Import CSV</button>
+        <span class="msg" id="csvStatus" aria-live="polite"></span>
+      </div>
+    </div>
+    <pre class="out" id="csvOut" hidden></pre>
   </div>
 
   <script>
@@ -110,7 +170,7 @@
       const sec = document.createElement("section");
       sec.className = "cat";
       sec.innerHTML = `
-        <h2>Category ${i + 1}</h2>
+        <h3>Category ${i + 1}</h3>
         <label for="label${i}">Category name</label>
         <input type="text" id="label${i}" name="label${i}" required autocomplete="off" placeholder="e.g. Fish" />
         <label>Words (four)</label>
@@ -124,9 +184,50 @@
     const statusEl = document.getElementById("status");
     const jsonOut = document.getElementById("jsonOut");
     const btn = document.getElementById("btn");
+    const tokenEl = document.getElementById("adminToken");
+    const csvBtn = document.getElementById("csvBtn");
+    const csvFile = document.getElementById("csvFile");
+    const csvStatus = document.getElementById("csvStatus");
+    const csvOut = document.getElementById("csvOut");
+
+    const TOKEN_KEY = "jointed_admin_token";
+    try {
+      const saved = sessionStorage.getItem(TOKEN_KEY);
+      if (saved) tokenEl.value = saved;
+    } catch (_) {}
+    tokenEl.addEventListener("change", () => {
+      try { sessionStorage.setItem(TOKEN_KEY, tokenEl.value.trim()); } catch (_) {}
+    });
 
     function apiBase() {
       return "";
+    }
+
+    function requireToken() {
+      const t = tokenEl.value.trim();
+      if (!t) return null;
+      try { sessionStorage.setItem(TOKEN_KEY, t); } catch (_) {}
+      return t;
+    }
+
+    function jsonAuthHeaders() {
+      const t = requireToken();
+      const h = { "Content-Type": "application/json" };
+      if (t) h["Authorization"] = "Bearer " + t;
+      return h;
+    }
+
+    function bearerOnlyHeaders() {
+      const t = requireToken();
+      if (!t) return null;
+      return { Authorization: "Bearer " + t };
+    }
+
+    function formatError(data) {
+      if (data == null) return "";
+      if (typeof data.detail === "string") return data.detail;
+      if (Array.isArray(data.detail)) return data.detail.join("; ");
+      return JSON.stringify(data.detail || data);
     }
 
     document.getElementById("form").addEventListener("submit", async (e) => {
@@ -140,21 +241,26 @@
         const words = [0,1,2,3].map(j => document.getElementById(`w${i}_${j}`).value);
         categories.push({ label, words });
       }
+      if (!requireToken()) {
+        statusEl.className = "msg error";
+        statusEl.textContent = "Enter the admin token first.";
+        return;
+      }
+
       btn.disabled = true;
       try {
         const res = await fetch(apiBase() + "/v1/puzzles", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: jsonAuthHeaders(),
           body: JSON.stringify({ categories }),
         });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) {
           statusEl.className = "msg error";
-          statusEl.textContent = data.detail || res.statusText || "Request failed";
+          statusEl.textContent = formatError(data) || res.statusText || "Request failed";
           return;
         }
         statusEl.className = "msg ok";
-        statusEl.textContent = "Saved. Puzzle id: " + data.puzzle_id;
         const fetchUrl = apiBase() + "/v1/puzzles/" + data.puzzle_id;
         jsonOut.textContent = JSON.stringify(data, null, 2);
         jsonOut.hidden = false;
@@ -165,6 +271,57 @@
         statusEl.textContent = String(err);
       } finally {
         btn.disabled = false;
+      }
+    });
+
+    csvBtn.addEventListener("click", async () => {
+      csvStatus.textContent = "";
+      csvStatus.className = "msg";
+      csvOut.hidden = true;
+
+      const headers = bearerOnlyHeaders();
+      if (!headers) {
+        csvStatus.className = "msg error";
+        csvStatus.textContent = "Enter the admin token first.";
+        return;
+      }
+      const file = csvFile.files && csvFile.files[0];
+      if (!file) {
+        csvStatus.className = "msg error";
+        csvStatus.textContent = "Choose a CSV file.";
+        return;
+      }
+
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+
+      csvBtn.disabled = true;
+      try {
+        const res = await fetch(apiBase() + "/v1/import/words-csv", {
+          method: "POST",
+          headers,
+          body: fd,
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          csvStatus.className = "msg error";
+          csvStatus.textContent = formatError(data) || res.statusText || "Import failed";
+          return;
+        }
+        csvStatus.className = "msg ok";
+        csvStatus.textContent =
+          "Import done: " +
+          data.links_added +
+          " new link(s), " +
+          data.links_already_present +
+          " already present.";
+        csvOut.textContent = JSON.stringify(data, null, 2);
+        csvOut.hidden = false;
+      } catch (err) {
+        csvStatus.className = "msg error";
+        csvStatus.textContent = String(err);
+      } finally {
+        csvBtn.disabled = false;
       }
     });
   </script>
